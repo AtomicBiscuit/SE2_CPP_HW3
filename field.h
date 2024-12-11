@@ -10,6 +10,7 @@
 #include <memory>
 #include <algorithm>
 #include <cstring>
+#include <fstream>
 
 #include "numbers.h"
 #include "static_array.h"
@@ -19,19 +20,21 @@
 
 namespace Emulator {
     struct AbstractField {
-        virtual void init(std::vector<std::vector<char>> f, int n, int k) = 0;
-
         virtual void next(int) = 0;
+
+        virtual void save(const std::string &, int) = 0;
+
+        virtual void load(const std::string &) = 0;
 
         virtual ~AbstractField() = default;
     };
 
     template<typename PType, typename VType, typename VFType, int N_val, int K_val>
-    struct FieldEmulator : public AbstractField {
+    class FieldEmulator : public AbstractField {
         int N = 0;
         int K = 0;
 
-        Array<char, N_val, K_val == -1 ? -1 : K_val + 1> field{};
+        Array<char, N_val, K_val> field{};
 
         VectorField<VType, N_val, K_val> velocity = {};
         VectorField<VFType, N_val, K_val> velocity_flow = {};
@@ -43,25 +46,65 @@ namespace Emulator {
         PType rho[256];
         Array<PType, N_val, K_val> p{}, old_p{};
 
+    public:
         constexpr FieldEmulator() = default;
 
-        void init(std::vector<std::vector<char>> f, int n, int k) override {
-            N = n;
-            K = k;
-            field.init(n, k);
+        void next(int i) override {
+            PType total_delta_p = int64_t(0);
 
-            for (int i = 0; i < n; i++) {
-                for (int j = 0; j < k; j++) {
-                    field[i][j] = f[i][j];
+            apply_external_forces();
+
+            apply_p_forces(total_delta_p);
+
+            apply_forces_on_flow();
+
+            recalculate_p(total_delta_p);
+
+            bool prop = apply_move_on_flow();
+
+            if (prop) {
+                std::cout << "Tick " << i << ":\n";
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < K; k++) {
+                        std::cout << field[j][k];
+                    }
+                    std::cout << "\n";
                 }
+                std::cout.flush();
             }
+        }
 
-            velocity.v.init(n, k);
-            velocity_flow.v.init(n, k);
-            dirs.init(n, k);
-            last_use.init(n, k);
-            p.init(n, k);
-            old_p.init(n, k);
+        void save(const std::string &filename, int tick) override {
+            std::ofstream file(filename);
+            if (not file.is_open()) {
+                std::cout << "Error: can`t open file `" << filename << "`" << std::endl;
+            }
+            file << N << " " << K << " " << tick << " " << UT << "\n";
+            save_array(field, file);
+            save_array(velocity.v, file);
+            save_array(last_use, file);
+            save_array(p, file);
+        }
+
+        void load(const std::string &filename) override {
+            std::ifstream file(filename);
+            int t;
+            if (not file.is_open()) {
+                std::cout << "Error: can`t open file `" << filename << "`" << std::endl;
+            }
+            file >> N >> K >> t >> UT;
+            load_array(field, file, N, K);
+            load_array(velocity.v, file, N, K);
+            load_array(last_use, file, N, K);
+            load_array(p, file, N, K);
+            init();
+        }
+
+    private:
+        void init() {
+            velocity_flow.v.init(N, K);
+            dirs.init(N, K);
+            old_p.init(N, K);
 
             rho[' '] = 0.01;
             rho['.'] = int64_t(1000);
@@ -236,6 +279,24 @@ namespace Emulator {
             }
         }
 
+        void apply_forces_on_flow() {
+            velocity_flow.v.clear();
+            bool prop;
+            do {
+                UT += 2;
+                prop = false;
+                for (int x = 0; x < N; ++x) {
+                    for (int y = 0; y < K; ++y) {
+                        if (field[x][y] == '#' or last_use[x][y] == UT) {
+                            continue;
+                        }
+                        auto [t, local_prop, _] = propagate_flow(x, y, int64_t(1));
+                        prop = prop or (t > int64_t(0));
+                    }
+                }
+            } while (prop);
+        }
+
         void recalculate_p(PType &total_delta_p) {
             for (int x = 0; x < N; ++x) {
                 for (int y = 0; y < K; ++y) {
@@ -263,31 +324,9 @@ namespace Emulator {
             }
         }
 
-        void next(int i) override {
-            PType total_delta_p = int64_t(0);
-            apply_external_forces();
-            apply_p_forces(total_delta_p);
-
-            velocity_flow.v.clear();
-            bool prop;
-            do {
-                UT += 2;
-                prop = false;
-                for (int x = 0; x < N; ++x) {
-                    for (int y = 0; y < K; ++y) {
-                        if (field[x][y] == '#' or last_use[x][y] == UT) {
-                            continue;
-                        }
-                        auto [t, local_prop, _] = propagate_flow(x, y, int64_t(1));
-                        prop = prop or (t > int64_t(0));
-                    }
-                }
-            } while (prop);
-
-            recalculate_p(total_delta_p);
-
+        bool apply_move_on_flow() {
             UT += 2;
-            prop = false;
+            bool prop = false;
             for (int x = 0; x < N; ++x) {
                 for (int y = 0; y < K; ++y) {
                     if (field[x][y] != '#' && last_use[x][y] != UT) {
@@ -300,18 +339,7 @@ namespace Emulator {
                     }
                 }
             }
-
-            if (prop) {
-                std::cout << "Tick " << i << ":\n";
-                for (int j = 0; j < N; j++) {
-                    for (int k = 0; k < K; k++) {
-                        std::cout << field[j][k];
-                    }
-                    std::cout << "\n";
-                }
-                std::cout.flush();
-            }
+            return prop;
         }
     };
-
 }
