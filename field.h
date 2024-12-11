@@ -12,76 +12,12 @@
 #include <cstring>
 
 #include "numbers.h"
+#include "static_array.h"
+#include "utilities.h"
+#include "vector_field.h"
 
 
 namespace Emulator {
-    constexpr std::array<std::pair<int, int>, 4> deltas{{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}};
-
-    std::mt19937 rnd(1337);
-
-    template<typename Type, int N, int K>
-    struct Array {
-        Type arr[N][K]{};
-
-        void init(int n, int k) {}
-
-        void clear() {
-            std::memset(arr, 0, sizeof(arr));
-        }
-
-        Type *operator[](int n) {
-            return arr[n];
-        }
-
-        Array &operator=(const Array &other) {
-            if (this == &other) {
-                return *this;
-            }
-            std::memcpy(arr, other.arr, sizeof(arr));
-            return *this;
-        }
-    };
-
-    template<typename Type>
-    struct Array<Type, -1, -1> {
-        std::vector<std::vector<Type>> arr{};
-
-        void init(int n, int k) {
-            arr.assign(n, std::vector<Type>(k, Type{}));
-        }
-
-        void clear() {
-            arr = std::vector(arr.size(), std::vector<Type>(arr[0].size(), Type{}));
-        }
-
-        std::vector<Type> &operator[](int n) {
-            return arr[n];
-        }
-
-        Array &operator=(const Array &other) {
-            if (this == &other) {
-                return *this;
-            }
-            arr = other.arr;
-            return *this;
-        }
-    };
-
-    template<typename T, int N, int K>
-    struct VectorField {
-        Array<std::array<T, deltas.size()>, N, K> v;
-
-        T &add(int x, int y, int dx, int dy, T dv) {
-            return get(x, y, dx, dy) += dv;
-        }
-
-        T &get(int x, int y, int dx, int dy) {
-            size_t i = std::ranges::find(deltas, std::pair(dx, dy)) - deltas.begin();
-            assert(i < deltas.size());
-            return v[x][y][i];
-        }
-    };
-
     struct AbstractField {
         virtual void init(std::vector<std::vector<char>> f, int n, int k) = 0;
 
@@ -89,9 +25,6 @@ namespace Emulator {
 
         virtual ~AbstractField() = default;
     };
-
-    template<typename T>
-    T g() { return 0.1; };
 
     template<typename PType, typename VType, typename VFType, int N_val, int K_val>
     struct FieldEmulator : public AbstractField {
@@ -140,14 +73,6 @@ namespace Emulator {
                         dirs[x][y] += (field[x + dx][y + dy] != '#');
                     }
                 }
-            }
-        }
-
-        VType random01() {
-            if constexpr (std::is_same_v<VType, float> or std::is_same_v<VType, double>) {
-                return VType(rnd()) / VType(std::mt19937::max());
-            } else {
-                return VType::from_raw((rnd() & ((1LL << VType::k) - 1LL)));
             }
         }
 
@@ -216,19 +141,11 @@ namespace Emulator {
             return sum;
         }
 
-        struct ParticleParams {
-            char type{};
-            PType cur_p{};
-            std::array<VType, deltas.size()> v{};
-            FieldEmulator *target;
-
-
-            void swap_with(int x, int y) {
-                std::swap(target->field[x][y], type);
-                std::swap(target->p[x][y], cur_p);
-                std::swap(target->velocity.v[x][y], v);
-            }
-        };
+        void swap(int x1, int y1, int x2, int y2) {
+            std::swap(field[x1][y1], field[x2][y2]);
+            std::swap(p[x1][y1], p[x2][y2]);
+            std::swap(velocity.v[x1][y1], velocity.v[x2][y2]);
+        }
 
         bool propagate_move(int x, int y, bool is_first) {
             last_use[x][y] = UT - is_first;
@@ -257,7 +174,7 @@ namespace Emulator {
                     break;
                 }
 
-                VType random_num = random01() * sum;
+                VType random_num = random01<VType>() * sum;
                 size_t d = std::ranges::upper_bound(tres, random_num) - tres.begin();
 
                 auto [dx, dy] = deltas[d];
@@ -274,13 +191,8 @@ namespace Emulator {
                     propagate_stop(forward_x, forward_y);
                 }
             }
-            if (ret) {
-                if (!is_first) {
-                    ParticleParams pp{.target=this};
-                    pp.swap_with(x, y);
-                    pp.swap_with(nx, ny);
-                    pp.swap_with(x, y);
-                }
+            if (ret and !is_first) {
+                swap(x, y, nx, ny);
             }
             return ret;
         }
@@ -324,7 +236,7 @@ namespace Emulator {
             }
         }
 
-        void recalc_p(PType &total_delta_p) {
+        void recalculate_p(PType &total_delta_p) {
             for (int x = 0; x < N; ++x) {
                 for (int y = 0; y < K; ++y) {
                     if (field[x][y] == '#')
@@ -372,14 +284,14 @@ namespace Emulator {
                 }
             } while (prop);
 
-            recalc_p(total_delta_p);
+            recalculate_p(total_delta_p);
 
             UT += 2;
             prop = false;
             for (int x = 0; x < N; ++x) {
                 for (int y = 0; y < K; ++y) {
                     if (field[x][y] != '#' && last_use[x][y] != UT) {
-                        if (random01() < move_prob(x, y)) {
+                        if (random01<VType>() < move_prob(x, y)) {
                             prop = true;
                             propagate_move(x, y, true);
                         } else {
