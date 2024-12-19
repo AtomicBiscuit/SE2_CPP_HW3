@@ -27,13 +27,14 @@ namespace Emulator {
     template<int N, bool is_fast>
     using real_type_t = real_type<N, is_fast>::type;
 
-    template<int N, int K, bool fast = false> requires(K >= 0)
+    template<int N, int K, bool fast> requires(K >= 0)
     struct Fixed {
         using real_t = real_type_t<N, fast>;
-        static const int n = N;
-        static const int k = K;
+        static constexpr int n = N;
+        static constexpr int k = K;
+        static constexpr bool is_fast = K;
 
-        real_t v;
+        real_t v = 0;
 
         template<int N1, int K1, bool is_fast1>
         requires(K1 > K)
@@ -43,6 +44,8 @@ namespace Emulator {
         requires(K1 <= K)
         constexpr Fixed(const Fixed<N1, K1, is_fast1> &other) : v(other.v << (K - K1)) {}
 
+        constexpr Fixed(const Fixed &other) : v(other.v) {}
+
         constexpr Fixed(int64_t v) : v(v << K) {}
 
         constexpr Fixed(float f) : v(f * (1LL << K)) {}
@@ -51,9 +54,9 @@ namespace Emulator {
 
         constexpr Fixed() : v(0) {}
 
-        explicit constexpr operator float() { return float(v) / (1LL << K); }
+        explicit operator float() const { return float(v) / (1LL << K); }
 
-        explicit constexpr operator double() { return double(v) / (1LL << K); }
+        explicit operator double() const { return double(v) / (1LL << K); }
 
         static constexpr Fixed from_raw(int x) {
             Fixed ret{};
@@ -65,50 +68,50 @@ namespace Emulator {
 
         bool operator==(const Fixed &) const = default;
 
-        friend Fixed operator+(Fixed a, Fixed b) {
+        friend Fixed operator+(const Fixed &a, const Fixed &b) {
             return Fixed::from_raw(a.v + b.v);
         }
 
-        friend Fixed operator-(Fixed a, Fixed b) {
+        friend Fixed operator-(const Fixed &a, const Fixed &b) {
             return Fixed::from_raw(a.v - b.v);
         }
 
-        friend Fixed operator*(Fixed a, Fixed b) {
+        friend Fixed operator*(const Fixed &a, const Fixed &b) {
             return Fixed::from_raw(((int64_t) a.v * b.v) >> K);
         }
 
-        friend Fixed operator/(Fixed a, Fixed b) {
+        friend Fixed operator/(const Fixed &a, const Fixed &b) {
             return Fixed::from_raw(((int64_t) a.v << K) / b.v);
         }
 
-        friend Fixed &operator+=(Fixed &a, Fixed b) {
+        friend Fixed &operator+=(Fixed &a, const Fixed &b) {
             return a = a + b;
         }
 
-        friend Fixed &operator-=(Fixed &a, Fixed b) {
+        friend Fixed &operator-=(Fixed &a, const Fixed &b) {
             return a = a - b;
         }
 
-        friend Fixed &operator*=(Fixed &a, Fixed b) {
+        friend Fixed &operator*=(Fixed &a, const Fixed &b) {
             return a = a * b;
         }
 
-        friend Fixed &operator/=(Fixed &a, Fixed b) {
+        friend Fixed &operator/=(Fixed &a, const Fixed &b) {
             return a = a / b;
         }
 
-        friend Fixed operator-(Fixed x) {
+        friend Fixed operator-(const Fixed &x) {
             return Fixed::from_raw(-x.v);
         }
 
-        friend Fixed fabs(Fixed x) {
+        friend Fixed fabs(const Fixed &x) {
             if (x.v < 0) {
-                x.v = -x.v;
+                return from_raw(-x.v);
             }
             return x;
         }
 
-        friend std::ostream &operator<<(std::ostream &out, Fixed x) {
+        friend std::ostream &operator<<(std::ostream &out, const Fixed &x) {
             return out << x.v / (double) (1 << K);
         }
     };

@@ -1,11 +1,8 @@
-#include "field.h"
-#include "fields_factory.h"
-#include "argument.h"
+#include "include/fields_factory.h"
+#include "include/argument.h"
 
-#include <vector>
 #include <string>
 #include <fstream>
-#include <csignal>
 
 std::tuple<int, int, int> read_field_params(const std::string &path) {
     std::ifstream in(path);
@@ -14,22 +11,16 @@ std::tuple<int, int, int> read_field_params(const std::string &path) {
     return {N, K, T};
 }
 
-bool save_flag = false;
-
-void on_interrupt(int _) {
-    save_flag = true;
-}
-
 int main(int argc, char **argv) {
-    signal(SIGINT, on_interrupt);
-
     ArgumentParser args(argc, argv);
 
     int type_p = Emulator::TypeEncoder::get_type(args.get_option("--p-type"));
     int type_v = Emulator::TypeEncoder::get_type(args.get_option("--v-type"));
     int type_vf = Emulator::TypeEncoder::get_type(args.get_option("--v-flow-type"));
+
     std::string filename = args.get_option("--field");
-    std::string save_filename = args.get_option("--save-field");
+
+    int workers = std::stoi(args.get_option("--threads-count"));
 
     int T = 1'000'000;
 
@@ -38,20 +29,15 @@ int main(int argc, char **argv) {
     auto field = get_field(type_p, type_v, type_vf, N, K);
 
     field->load(filename);
-    for (int i = t; i < T; ++i) {
-        if (save_flag) {
-            std::cout << "Saving field to `" << save_filename << "`" << std::endl;
+    field->init_workers(workers);
 
-            field->save(save_filename, i);
-
-            std::cout << "Complete. Enter any number to continue: ";
-
-            save_flag = false;
-            int tmp;
-            std::cin >> tmp;
-
-            std::cout << std::endl;
-        }
+    auto timer = std::chrono::steady_clock::now();
+    for (int i = 0; i < T; ++i) {
         field->next(i);
+        if (i == 10'000) {
+            break;
+        }
     }
+    std::cout << std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - timer).count()
+              << std::endl;
 }

@@ -5,13 +5,11 @@
 #include <array>
 
 namespace Emulator {
+    static std::mt19937 rnd(1337);
     constexpr std::array<std::pair<int, int>, 4> deltas{{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}};
 
     template<typename T>
     T g() { return 0.1; };
-
-
-    std::mt19937 rnd(1337);
 
     template<typename T>
     T random01() {

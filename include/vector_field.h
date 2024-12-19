@@ -17,9 +17,16 @@ namespace Emulator {
         }
 
         T &get(int x, int y, int dx, int dy) {
-            size_t i = std::ranges::find(deltas, std::pair(dx, dy)) - deltas.begin();
-            assert(i < deltas.size());
-            return v[x][y][i];
+            switch ((dx << 1) + dy) {
+                case 1:
+                    return v[x][y][3];
+                case 2:
+                    return v[x][y][1];
+                case -1:
+                    return v[x][y][2];
+                default:
+                    return v[x][y][0];
+            }
         }
     };
 }

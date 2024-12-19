@@ -62,7 +62,7 @@ namespace Emulator {
             using type = std::conditional_t<n == 1, float,
                     std::conditional_t<n == 2, double,
                             std::conditional_t<(n > 100000), Fixed<n / 100000, n % 100000, true>,
-                                    std::conditional_t<(n > 1000), Fixed<n / 1000, n % 1000>, void>>>>;
+                                    std::conditional_t<(n > 1000), Fixed<n / 1000, n % 1000, false>, void>>>>;
         };
     }
 

@@ -39,7 +39,16 @@ namespace Emulator {
         void init(int n, int k) {
             N = n;
             K = k;
-            arr.assign(n, std::vector<Type>(k, Type{}));
+
+            if constexpr (std::is_copy_constructible_v<Type>) {
+                arr.assign(n, std::vector<Type>(k, Type{}));
+            } else {
+                arr.resize(n);
+                for (auto &line: arr) {
+                    std::vector<Type> tmp(k);
+                    line.swap(tmp);
+                }
+            }
         }
 
         void clear() {
@@ -58,31 +67,6 @@ namespace Emulator {
             return *this;
         }
     };
-
-    template<typename Type, int N, int K>
-    void save_array(Array<Type, N, K> &arr, std::ofstream &file) {
-        for (int i = 0; i < arr.N; i++) {
-            for (int j = 0; j < arr.K; j++) {
-                if constexpr (std::is_same_v<Type, char>) {
-                    file << int(arr[i][j]) << " ";
-                } else {
-                    file << double(arr[i][j]) << " ";
-                }
-            }
-            file << "\n";
-        }
-    }
-
-    template<typename Type, int N, int K>
-    void save_array(Array<std::array<Type, 4>, N, K> &arr, std::ofstream &file) {
-        for (int i = 0; i < arr.N; i++) {
-            for (int j = 0; j < arr.K; j++) {
-                file << double(arr[i][j][0]) << " " << double(arr[i][j][1]) << " " << double(arr[i][j][2]) << " "
-                     << double(arr[i][j][3]) << " ";
-            }
-            file << "\n";
-        }
-    }
 
     template<typename Type, int N, int K>
     void load_array(Array<Type, N, K> &arr, std::ifstream &file, int n, int k) {
